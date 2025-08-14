@@ -1,9 +1,8 @@
 using AccountingAPI.Data;
 using AccountingAPI.Models;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Cryptography;
-using System.Text;
 
 namespace AccountingAPI.Controllers
 {
@@ -12,10 +11,12 @@ namespace AccountingAPI.Controllers
     public class UsersController : ControllerBase
     {
         private readonly AccountingContext _context;
+        private readonly IPasswordHasher<User> _passwordHasher;
 
-        public UsersController(AccountingContext context)
+        public UsersController(AccountingContext context, IPasswordHasher<User> passwordHasher)
         {
             _context = context;
+            _passwordHasher = passwordHasher;
         }
 
         // GET: api/users
@@ -44,7 +45,7 @@ namespace AccountingAPI.Controllers
             // Hash the password before saving
             if (!string.IsNullOrWhiteSpace(user.PasswordHash))
             {
-                user.PasswordHash = ComputeSha256Hash(user.PasswordHash);
+                user.PasswordHash = _passwordHasher.HashPassword(user, user.PasswordHash);
             }
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
@@ -71,7 +72,7 @@ namespace AccountingAPI.Controllers
             existing.Role = updated.Role;
             if (!string.IsNullOrWhiteSpace(updated.PasswordHash))
             {
-                existing.PasswordHash = ComputeSha256Hash(updated.PasswordHash);
+                existing.PasswordHash = _passwordHasher.HashPassword(existing, updated.PasswordHash);
             }
 
             await _context.SaveChangesAsync();
@@ -92,19 +93,5 @@ namespace AccountingAPI.Controllers
             return NoContent();
         }
 
-        private static string ComputeSha256Hash(string rawData)
-        {
-            // Create a SHA256 hash of the input string
-            using (var sha256 = SHA256.Create())
-            {
-                var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(rawData));
-                var builder = new StringBuilder();
-                foreach (var b in bytes)
-                {
-                    builder.Append(b.ToString("x2"));
-                }
-                return builder.ToString();
-            }
-        }
     }
 }

@@ -1,11 +1,14 @@
 using AccountingAPI.Data;
 using AccountingAPI.Models;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure services
 builder.Services.AddControllers();
+builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 
 // Add EF Core with SQL Server provider
 builder.Services.AddDbContext<AccountingContext>(options =>
@@ -38,19 +41,10 @@ using (var scope = app.Services.CreateScope())
     // Seed default admin user if not present
     if (!db.Users.Any())
     {
-        // Hash default password "password"
-        string defaultHash;
-        using (var sha256 = System.Security.Cryptography.SHA256.Create())
-        {
-            var bytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes("password"));
-            var builder2 = new System.Text.StringBuilder();
-            foreach (var b in bytes)
-            {
-                builder2.Append(b.ToString("x2"));
-            }
-            defaultHash = builder2.ToString();
-        }
-        db.Users.Add(new User { Username = "admin", PasswordHash = defaultHash, Role = "Admin" });
+        var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher<User>>();
+        var admin = new User { Username = "admin", Role = "Admin" };
+        admin.PasswordHash = passwordHasher.HashPassword(admin, "password");
+        db.Users.Add(admin);
         db.SaveChanges();
     }
 }
@@ -68,8 +62,8 @@ app.UseHttpsRedirection();
 
 app.UseAuthorization();
 
-// Login endpoint that validates credentials against stored users in the database. Passwords are stored as SHA256 hashes.
-app.MapPost("/api/auth/login", async ([FromServices] AccountingContext db, LoginRequest login) =>
+// Login endpoint that validates credentials against stored users in the database using a secure password hasher.
+app.MapPost("/api/auth/login", async ([FromServices] AccountingContext db, [FromServices] IPasswordHasher<User> passwordHasher, LoginRequest login) =>
 {
     if (string.IsNullOrWhiteSpace(login.Username) || string.IsNullOrWhiteSpace(login.Password))
     {
@@ -83,22 +77,15 @@ app.MapPost("/api/auth/login", async ([FromServices] AccountingContext db, Login
         return Results.BadRequest(new { message = "Invalid username or password" });
     }
 
-    // Compute hash of the provided password for comparison
-    string providedHash;
-    using (var sha256 = System.Security.Cryptography.SHA256.Create())
-    {
-        var bytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(login.Password));
-        var builder = new System.Text.StringBuilder();
-        foreach (var b in bytes)
-        {
-            builder.Append(b.ToString("x2"));
-        }
-        providedHash = builder.ToString();
-    }
-
-    if (user.PasswordHash != providedHash)
+    var verification = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, login.Password);
+    if (verification == PasswordVerificationResult.Failed)
     {
         return Results.BadRequest(new { message = "Invalid username or password" });
+    }
+    if (verification == PasswordVerificationResult.SuccessRehashNeeded)
+    {
+        user.PasswordHash = passwordHasher.HashPassword(user, login.Password);
+        await db.SaveChangesAsync();
     }
 
     return Results.Ok(new { username = user.Username, role = user.Role });
