@@ -1,19 +1,41 @@
 using AccountingAPI.Data;
 using AccountingAPI.Models;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.Security.Claims;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
+    ?? builder.Configuration.GetConnectionString("AccountingConnection")
+    ?? throw new InvalidOperationException("Connection string not configured.");
+var jwtKey = Environment.GetEnvironmentVariable("JWT_SECRET")
+    ?? builder.Configuration["Jwt:Key"]
+    ?? throw new InvalidOperationException("JWT secret not configured.");
 
 // Configure services
 builder.Services.AddControllers();
 
-// Add EF Core with SQL Server provider
 builder.Services.AddDbContext<AccountingContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("AccountingConnection")));
+    options.UseSqlServer(connectionString));
 
-// Remove in-memory users; user credentials are stored in the database via AccountingContext.Users.
-// A default admin user will be seeded through EF Core migrations or initialization scripts.
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+        };
+    });
 
+builder.Services.AddAuthorization();
+builder.Services.AddHostedService<DatabaseInitializer>();
 
 // Add CORS so clients on different origins can call the API
 builder.Services.AddCors(options =>
@@ -30,31 +52,6 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Ensure the database is created and apply migrations; seed a default admin user if none exists
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AccountingContext>();
-    db.Database.Migrate();
-    // Seed default admin user if not present
-    if (!db.Users.Any())
-    {
-        // Hash default password "password"
-        string defaultHash;
-        using (var sha256 = System.Security.Cryptography.SHA256.Create())
-        {
-            var bytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes("password"));
-            var builder2 = new System.Text.StringBuilder();
-            foreach (var b in bytes)
-            {
-                builder2.Append(b.ToString("x2"));
-            }
-            defaultHash = builder2.ToString();
-        }
-        db.Users.Add(new User { Username = "admin", PasswordHash = defaultHash, Role = "Admin" });
-        db.SaveChanges();
-    }
-}
-
 // Configure middleware
 app.UseCors();
 
@@ -66,9 +63,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
 app.UseAuthorization();
 
-// Login endpoint that validates credentials against stored users in the database. Passwords are stored as SHA256 hashes.
+// Login endpoint that validates credentials and returns a JWT token
 app.MapPost("/api/auth/login", async ([FromServices] AccountingContext db, LoginRequest login) =>
 {
     if (string.IsNullOrWhiteSpace(login.Username) || string.IsNullOrWhiteSpace(login.Password))
@@ -76,24 +74,22 @@ app.MapPost("/api/auth/login", async ([FromServices] AccountingContext db, Login
         return Results.BadRequest(new { message = "Username and password are required" });
     }
 
-    // Find user by username
     var user = await db.Users.FirstOrDefaultAsync(u => u.Username == login.Username);
     if (user == null)
     {
         return Results.BadRequest(new { message = "Invalid username or password" });
     }
 
-    // Compute hash of the provided password for comparison
     string providedHash;
     using (var sha256 = System.Security.Cryptography.SHA256.Create())
     {
-        var bytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(login.Password));
-        var builder = new System.Text.StringBuilder();
+        var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(login.Password));
+        var builderHash = new StringBuilder();
         foreach (var b in bytes)
         {
-            builder.Append(b.ToString("x2"));
+            builderHash.Append(b.ToString("x2"));
         }
-        providedHash = builder.ToString();
+        providedHash = builderHash.ToString();
     }
 
     if (user.PasswordHash != providedHash)
@@ -101,14 +97,26 @@ app.MapPost("/api/auth/login", async ([FromServices] AccountingContext db, Login
         return Results.BadRequest(new { message = "Invalid username or password" });
     }
 
-    return Results.Ok(new { username = user.Username, role = user.Role });
+    var tokenHandler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+    var key = Encoding.UTF8.GetBytes(jwtKey);
+    var tokenDescriptor = new SecurityTokenDescriptor
+    {
+        Subject = new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.Name, user.Username),
+            new Claim(ClaimTypes.Role, user.Role)
+        }),
+        Expires = DateTime.UtcNow.AddHours(1),
+        SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+    };
+    var token = tokenHandler.CreateToken(tokenDescriptor);
+
+    return Results.Ok(new { token = tokenHandler.WriteToken(token) });
 });
 
 // Map controllers
 app.MapControllers();
 
-// Run the application
 app.Run();
 
-// Login request model
 public record LoginRequest(string Username, string Password);

@@ -1,5 +1,6 @@
 using AccountingAPI.Data;
 using AccountingAPI.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,6 +8,7 @@ namespace AccountingAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class VendorsController : ControllerBase
     {
         private readonly AccountingContext _context;
@@ -39,6 +41,7 @@ namespace AccountingAPI.Controllers
         [HttpPost]
         public async Task<ActionResult<Vendor>> PostVendor(Vendor vendor)
         {
+            if (!ModelState.IsValid) return ValidationProblem(ModelState);
             _context.Vendors.Add(vendor);
             await _context.SaveChangesAsync();
             return CreatedAtAction(nameof(GetVendor), new { id = vendor.Id }, vendor);
@@ -52,6 +55,7 @@ namespace AccountingAPI.Controllers
             {
                 return BadRequest();
             }
+            if (!ModelState.IsValid) return ValidationProblem(ModelState);
             _context.Entry(vendor).State = EntityState.Modified;
             try
             {

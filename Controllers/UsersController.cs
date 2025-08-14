@@ -1,5 +1,6 @@
 using AccountingAPI.Data;
 using AccountingAPI.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
@@ -9,6 +10,7 @@ namespace AccountingAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class UsersController : ControllerBase
     {
         private readonly AccountingContext _context;
@@ -41,6 +43,7 @@ namespace AccountingAPI.Controllers
         [HttpPost]
         public async Task<ActionResult<User>> PostUser(User user)
         {
+            if (!ModelState.IsValid) return ValidationProblem(ModelState);
             // Hash the password before saving
             if (!string.IsNullOrWhiteSpace(user.PasswordHash))
             {
@@ -59,6 +62,7 @@ namespace AccountingAPI.Controllers
             {
                 return BadRequest();
             }
+            if (!ModelState.IsValid) return ValidationProblem(ModelState);
 
             // If password is provided, hash it. Otherwise, keep existing hash.
             var existing = await _context.Users.FirstOrDefaultAsync(u => u.Id == id);

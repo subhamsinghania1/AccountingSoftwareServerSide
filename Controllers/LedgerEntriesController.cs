@@ -1,5 +1,6 @@
 using AccountingAPI.Data;
 using AccountingAPI.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,6 +8,7 @@ namespace AccountingAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class LedgerEntriesController : ControllerBase
     {
         private readonly AccountingContext _context;
@@ -56,6 +58,7 @@ namespace AccountingAPI.Controllers
         [HttpPost]
         public async Task<ActionResult<LedgerEntry>> PostLedgerEntry(LedgerEntry entry)
         {
+            if (!ModelState.IsValid) return ValidationProblem(ModelState);
             // Validate vendor exists
             var vendorExists = await _context.Vendors.AnyAsync(v => v.Id == entry.VendorId);
             if (!vendorExists)
@@ -78,6 +81,7 @@ namespace AccountingAPI.Controllers
             {
                 return BadRequest();
             }
+            if (!ModelState.IsValid) return ValidationProblem(ModelState);
             _context.Entry(entry).State = EntityState.Modified;
             try
             {
