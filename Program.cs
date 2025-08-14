@@ -3,21 +3,40 @@ using AccountingAPI.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddEnvironmentVariables();
+
+var jwtSecret = builder.Configuration["JWT_SECRET"]
+    ?? throw new InvalidOperationException("JWT_SECRET is not configured");
+var connectionString = builder.Configuration.GetConnectionString("AccountingConnection")
+    ?? builder.Configuration["ACCOUNTING_CONNECTION"]
+    ?? throw new InvalidOperationException("Database connection string not configured");
 
 // Configure services
 builder.Services.AddControllers();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
-
-// Add EF Core with SQL Server provider
 builder.Services.AddDbContext<AccountingContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("AccountingConnection")));
+    options.UseSqlServer(connectionString));
+builder.Services.AddHostedService<DatabaseInitializer>();
 
-// Remove in-memory users; user credentials are stored in the database via AccountingContext.Users.
-// A default admin user will be seeded through EF Core migrations or initialization scripts.
-
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+            ValidateIssuer = false,
+            ValidateAudience = false
+        };
+    });
+builder.Services.AddAuthorization();
 
 // Add CORS so clients on different origins can call the API
 builder.Services.AddCors(options =>
@@ -34,22 +53,6 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Ensure the database is created and apply migrations; seed a default admin user if none exists
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AccountingContext>();
-    db.Database.Migrate();
-    // Seed default admin user if not present
-    if (!db.Users.Any())
-    {
-        var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher<User>>();
-        var admin = new User { Username = "admin", Role = "Admin" };
-        admin.PasswordHash = passwordHasher.HashPassword(admin, "password");
-        db.Users.Add(admin);
-        db.SaveChanges();
-    }
-}
-
 // Configure middleware
 app.UseCors();
 
@@ -61,6 +64,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 // Login endpoint that validates credentials against stored users in the database using a secure password hasher.
@@ -89,7 +93,22 @@ app.MapPost("/api/auth/login", async ([FromServices] AccountingContext db, [From
         await db.SaveChangesAsync();
     }
 
-    return Results.Ok(new { username = user.Username, role = user.Role });
+    var tokenHandler = new JwtSecurityTokenHandler();
+    var key = Encoding.UTF8.GetBytes(jwtSecret);
+    var tokenDescriptor = new SecurityTokenDescriptor
+    {
+        Subject = new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.Name, user.Username),
+            new Claim(ClaimTypes.Role, user.Role)
+        }),
+        Expires = DateTime.UtcNow.AddHours(1),
+        SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+    };
+    var token = tokenHandler.CreateToken(tokenDescriptor);
+    var tokenString = tokenHandler.WriteToken(token);
+
+    return Results.Ok(new { token = tokenString });
 });
 
 // Map controllers

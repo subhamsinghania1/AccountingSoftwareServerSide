@@ -3,10 +3,12 @@ using AccountingAPI.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 
 namespace AccountingAPI.Controllers
 {
     [ApiController]
+    [Authorize]
     [Route("api/[controller]")]
     public class UsersController : ControllerBase
     {
@@ -42,7 +44,14 @@ namespace AccountingAPI.Controllers
         [HttpPost]
         public async Task<ActionResult<User>> PostUser(User user)
         {
-            // Hash the password before saving
+            if (!ModelState.IsValid)
+            {
+                return ValidationProblem(ModelState);
+            }
+            if (await _context.Users.AnyAsync(u => u.Username == user.Username))
+            {
+                return Conflict(new { message = "Username already exists" });
+            }
             if (!string.IsNullOrWhiteSpace(user.PasswordHash))
             {
                 user.PasswordHash = _passwordHasher.HashPassword(user, user.PasswordHash);
@@ -58,14 +67,22 @@ namespace AccountingAPI.Controllers
         {
             if (id != updated.Id)
             {
-                return BadRequest();
+                return BadRequest(new { message = "Mismatched user id" });
+            }
+            if (!ModelState.IsValid)
+            {
+                return ValidationProblem(ModelState);
             }
 
-            // If password is provided, hash it. Otherwise, keep existing hash.
             var existing = await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
             if (existing == null)
             {
                 return NotFound();
+            }
+
+            if (await _context.Users.AnyAsync(u => u.Username == updated.Username && u.Id != id))
+            {
+                return Conflict(new { message = "Username already exists" });
             }
 
             existing.Username = updated.Username;
