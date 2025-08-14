@@ -2,10 +2,12 @@ using AccountingAPI.Data;
 using AccountingAPI.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 
 namespace AccountingAPI.Controllers
 {
     [ApiController]
+    [Authorize]
     [Route("api/[controller]")]
     public class LedgerEntriesController : ControllerBase
     {
@@ -56,7 +58,11 @@ namespace AccountingAPI.Controllers
         [HttpPost]
         public async Task<ActionResult<LedgerEntry>> PostLedgerEntry(LedgerEntry entry)
         {
-            // Validate vendor exists
+            if (!ModelState.IsValid)
+            {
+                return ValidationProblem(ModelState);
+            }
+
             var vendorExists = await _context.Vendors.AnyAsync(v => v.Id == entry.VendorId);
             if (!vendorExists)
             {
@@ -65,7 +71,6 @@ namespace AccountingAPI.Controllers
 
             _context.LedgerEntries.Add(entry);
             await _context.SaveChangesAsync();
-            // Load Vendor navigation property
             await _context.Entry(entry).Reference(e => e.Vendor).LoadAsync();
             return CreatedAtAction(nameof(GetLedgerEntry), new { id = entry.Id }, entry);
         }
@@ -76,8 +81,13 @@ namespace AccountingAPI.Controllers
         {
             if (id != entry.Id)
             {
-                return BadRequest();
+                return BadRequest(new { message = "Mismatched ledger entry id" });
             }
+            if (!ModelState.IsValid)
+            {
+                return ValidationProblem(ModelState);
+            }
+
             _context.Entry(entry).State = EntityState.Modified;
             try
             {

@@ -2,10 +2,12 @@ using AccountingAPI.Data;
 using AccountingAPI.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 
 namespace AccountingAPI.Controllers
 {
     [ApiController]
+    [Authorize]
     [Route("api/[controller]")]
     public class VendorsController : ControllerBase
     {
@@ -39,6 +41,10 @@ namespace AccountingAPI.Controllers
         [HttpPost]
         public async Task<ActionResult<Vendor>> PostVendor(Vendor vendor)
         {
+            if (!ModelState.IsValid)
+            {
+                return ValidationProblem(ModelState);
+            }
             _context.Vendors.Add(vendor);
             await _context.SaveChangesAsync();
             return CreatedAtAction(nameof(GetVendor), new { id = vendor.Id }, vendor);
@@ -50,7 +56,11 @@ namespace AccountingAPI.Controllers
         {
             if (id != vendor.Id)
             {
-                return BadRequest();
+                return BadRequest(new { message = "Mismatched vendor id" });
+            }
+            if (!ModelState.IsValid)
+            {
+                return ValidationProblem(ModelState);
             }
             _context.Entry(vendor).State = EntityState.Modified;
             try
