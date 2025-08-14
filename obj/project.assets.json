@@ -15,11 +15,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\AccountingServer\\AccountingApi\\AccountingApi.csproj",
+      "projectUniqueName": "C:\\AccountingServer\\AccountingSoftwareServerSide\\AccountingApi.csproj",
       "projectName": "AccountingApi",
-      "projectPath": "C:\\AccountingServer\\AccountingApi\\AccountingApi.csproj",
+      "projectPath": "C:\\AccountingServer\\AccountingSoftwareServerSide\\AccountingApi.csproj",
       "packagesPath": "C:\\Users\\Subham\\.nuget\\packages\\",
-      "outputPath": "C:\\AccountingServer\\AccountingApi\\obj\\",
+      "outputPath": "C:\\AccountingServer\\AccountingSoftwareServerSide\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"

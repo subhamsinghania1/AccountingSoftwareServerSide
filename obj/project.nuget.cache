@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "uHMleIFXAyIZnMrEsFElKfWK9yuUAqA5NzNL/rkvX1JALBC/GWSc+8Ix06ZWzsGp/i/Jx0UKgSFqcZnOfoRj7Q==",
+  "dgSpecHash": "E3IMbZa3lfYobsr+Tu56Q4iSb6+y3Dw5qncMLQpdW84saNwbLzkXcmkUDQnDruIWvHHosRZLVct39zGm1rR/Zg==",
   "success": true,
-  "projectFilePath": "C:\\AccountingServer\\AccountingApi\\AccountingApi.csproj",
+  "projectFilePath": "C:\\AccountingServer\\AccountingSoftwareServerSide\\AccountingApi.csproj",
   "expectedPackageFiles": [],
   "logs": []
 }
